@@ -1,7 +1,17 @@
 <!doctype html><html lang="es"><head>
+<!-- BECO'S Lubricentro - icon and mobile install metadata embedded in this single file -->
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#111827"><link rel="manifest" href="manifest.json">
-<title>BECO'S Lubricentro V13 · PWA estable y segura</title>
+<meta name="theme-color" content="#f59e0b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="BECO'S Lubricentro">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BECO’S">
+<link rel="icon" href="data:image/svg+xml,<svg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%20192%20192%22><rect%20width=%22192%22%20height=%22192%22%20rx=%2234%22%20fill=%22%2307101d%22/><rect%20x=%2216%22%20y=%2216%22%20width=%22160%22%20height=%22160%22%20rx=%2230%22%20fill=%22%23f59e0b%22/><text%20x=%2296%22%20y=%22132%22%20text-anchor=%22middle%22%20font-family=%22Arial,sans-serif%22%20font-size=%22112%22%20font-weight=%22700%22%20fill=%22%2307101d%22>B</text></svg>">
+<link rel="manifest" href="./manifest.json">
+<title>BECO'S Lubricentro</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#07101d;color:#f8fafc;font-family:Arial,sans-serif}
@@ -29,10 +39,12 @@ input,select,textarea{width:100%;padding:12px;border-radius:10px;border:1px soli
 @media(max-width:760px){.app{padding:11px}.grid{grid-template-columns:repeat(2,1fr)}.brand h2{font-size:19px}.brand .muted{font-size:12px}table{font-size:13px}.card{padding:14px}}
 
 </style></head><body><div class="app">
-<header><div class="brand"><div class="logo">B</div><div><h2>BECO'S LUBRICENTRO</h2><div class="muted">Sistema profesional V13 · Estable y segura</div></div></div><button onclick="settings()">⚙️ Configurar</button></header>
+<header><div class="brand"><div class="logo">B</div><div><h2>BECO'S LUBRICENTRO</h2><div class="muted">Sistema profesional V13 · Estable y segura</div></div></div><div class="actions"><button class="secondary" onclick="installHelp()">📲 Instalar</button><button onclick="settings()">⚙️ Configurar</button></div></header>
 <nav id="nav"><button data-page="home" onclick="home()">Inicio</button><button data-page="clients" onclick="clients()">Clientes</button><button data-page="vehicles" onclick="vehicles()">Vehículos</button><button data-page="services" onclick="services()">Servicios</button><button data-page="products" onclick="products()">Productos</button><button data-page="alerts" onclick="alerts()">🔔 Alertas</button></nav>
 <main id="main"></main></div><div id="modal" class="modal"><div id="sheet" class="sheet"></div></div>
+<div id="installHelp" class="modal"><div class="sheet"><h2>📲 Instalar BECO’S en el celular</h2><p>Esta versión está preparada para publicarse como una aplicación web. En Chrome, abrí el menú <b>⋮</b> y elegí <b>“Agregar a pantalla principal”</b> o <b>“Instalar aplicación”</b> si aparece.</p><div class="actions"><button class="secondary" onclick="document.getElementById('installHelp').classList.remove('on')">Cerrar</button></div></div></div>
 <script>
+function installHelp(){document.getElementById('installHelp').classList.add('on')}
 const K='becos_v8';
 let D=JSON.parse(localStorage.getItem(K)||'{}');
 D.clientes=Array.isArray(D.clientes)?D.clientes:[];
@@ -780,9 +792,11 @@ try{home()}catch(e){console.error(e);mainEl.innerHTML='<div class="card"><h3>⚠
 if(!D.settings.lastBackup && !localStorage.getItem(K+'_backup')) backupLocal('primer-inicio');
 </script>
 <script>
-if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+</script>
+<script>
+if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(err => console.warn('SW:', err));
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
   });
 }
 </script>
