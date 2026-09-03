@@ -1,0 +1,789 @@
+<!doctype html><html lang="es"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#111827"><link rel="manifest" href="manifest.json">
+<title>BECO'S Lubricentro V13 · PWA estable y segura</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#07101d;color:#f8fafc;font-family:Arial,sans-serif}
+.app{max-width:1200px;margin:auto;padding:16px}
+header{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:12px}
+.brand{display:flex;gap:12px;align-items:center}.logo{background:#f59e0b;color:#111827;border-radius:13px;padding:14px 16px;font-size:22px;font-weight:900;box-shadow:0 8px 24px #0005}
+h1,h2,h3,h4{margin-top:0}.brand h2{margin:0;font-size:23px}.brand .muted{font-size:14px;margin-top:5px}
+button{border:0;border-radius:11px;padding:11px 15px;font-weight:bold;background:#f59e0b;color:#111827;cursor:pointer}
+button:hover{filter:brightness(1.07)}button.secondary{background:#172033;color:#fff;border:1px solid #2b3950}button.danger{background:#ef4444;color:white}button.success{background:#16a34a;color:white}button.blue{background:#2563eb;color:white}
+nav{display:flex;gap:8px;overflow:auto;margin:12px 0 16px;padding-bottom:2px}
+nav button{background:#121d31;color:white;white-space:nowrap;min-width:max-content}
+nav button.active{background:#f59e0b;color:#111827}
+.card{background:#0e1828;border:1px solid #26364e;border-radius:16px;padding:17px;margin:13px 0;box-shadow:0 5px 18px #0002}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.stat{background:#121f32;padding:18px;border-radius:14px;border:1px solid #24334b}
+.stat b{display:block;font-size:29px;margin-top:6px}.stat span{color:#94a3b8;font-size:13px}
+.muted{color:#94a3b8}.row{display:flex;justify-content:space-between;gap:10px;align-items:center}.actions{display:flex;gap:8px;flex-wrap:wrap}
+input,select,textarea{width:100%;padding:12px;border-radius:10px;border:1px solid #2a3950;background:#091322;color:white;margin-top:5px}
+.field{margin:10px 0}table{width:100%;border-collapse:collapse;display:block;overflow:auto}th,td{padding:11px;border-bottom:1px solid #263247;text-align:left;white-space:nowrap}
+.badge{padding:4px 8px;border-radius:20px;background:#78350f}.ok{color:#4ade80}.warn{color:#fbbf24}.err{color:#f87171}
+.notice{border:1px solid #1769aa;background:#0a1c31;border-radius:13px;padding:14px;margin:12px 0}.notice b{color:#7dd3fc}
+.syncbar{display:flex;align-items:center;gap:10px;border:1px solid #31516f;background:#0b1727;border-radius:13px;padding:10px 13px}.dot{width:10px;height:10px;border-radius:50%;background:#f59e0b;display:inline-block}.dot.ok{background:#22c55e}.dot.err{background:#ef4444}
+.modal{position:fixed;inset:0;background:#000b;display:none;align-items:flex-end;justify-content:center;padding:10px;z-index:10}.modal.on{display:flex}
+.sheet{background:#0e1828;border:1px solid #30415b;border-radius:18px;padding:19px;width:min(760px,100%);max-height:92vh;overflow:auto;box-shadow:0 20px 60px #0008}
+.empty{text-align:center;color:#94a3b8;padding:28px}.small{font-size:13px}
+@media(max-width:760px){.app{padding:11px}.grid{grid-template-columns:repeat(2,1fr)}.brand h2{font-size:19px}.brand .muted{font-size:12px}table{font-size:13px}.card{padding:14px}}
+
+</style></head><body><div class="app">
+<header><div class="brand"><div class="logo">B</div><div><h2>BECO'S LUBRICENTRO</h2><div class="muted">Sistema profesional V13 · Estable y segura</div></div></div><button onclick="settings()">⚙️ Configurar</button></header>
+<nav id="nav"><button data-page="home" onclick="home()">Inicio</button><button data-page="clients" onclick="clients()">Clientes</button><button data-page="vehicles" onclick="vehicles()">Vehículos</button><button data-page="services" onclick="services()">Servicios</button><button data-page="products" onclick="products()">Productos</button><button data-page="alerts" onclick="alerts()">🔔 Alertas</button></nav>
+<main id="main"></main></div><div id="modal" class="modal"><div id="sheet" class="sheet"></div></div>
+<script>
+const K='becos_v8';
+let D=JSON.parse(localStorage.getItem(K)||'{}');
+D.clientes=Array.isArray(D.clientes)?D.clientes:[];
+D.vehiculos=Array.isArray(D.vehiculos)?D.vehiculos:[];
+D.servicios=Array.isArray(D.servicios)?D.servicios:[];
+D.productos=Array.isArray(D.productos)?D.productos:[];
+D.settings=(D.settings&&typeof D.settings==='object')?D.settings:{};
+const mainEl=document.getElementById('main'), modalEl=document.getElementById('modal'), sheetEl=document.getElementById('sheet');
+const save=()=>localStorage.setItem(K,JSON.stringify(D));
+const newid=()=>Date.now()+Math.random();
+const E=x=>String(x??'').replace(/[&<>"]/g,a=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[a]));
+let syncing=false;
+
+function cleanUrl(u){
+  return String(u||'').trim().replace(/\/+$/,'');
+}
+function cfg(){
+  return !!(cleanUrl(D.settings?.url) && String(D.settings?.key||'').trim());
+}
+function supabaseBase(){
+  return cleanUrl(D.settings?.url);
+}
+function apiHeaders(withBody=false){
+  const h={
+    'apikey':String(D.settings.key||'').trim(),
+    'Accept':'application/json'
+  };
+  // IMPORTANT: with the new sb_publishable_* keys, do not send the
+  // publishable key as Bearer. Bearer is only the user's JWT.
+  if(D.settings.access_token) h.Authorization='Bearer '+D.settings.access_token;
+  if(withBody) h['Content-Type']='application/json';
+  return h;
+}
+function explainNetworkError(e){
+  if(e && e.name==='TypeError'){
+    return 'El navegador no pudo comunicarse con Supabase. Verificá la Project URL, la conexión a Internet y que la URL empiece con https://. Si la URL y la red están bien, usá "Diagnóstico" para ver qué parte falla.';
+  }
+  return e?.message || String(e);
+}
+async function rawFetch(path,opts={},retry=true){
+  if(!cfg()) throw new Error('Falta configurar Project URL y Publishable key.');
+  const url=supabaseBase()+path;
+  const body=opts.body;
+  let r;
+  try{
+    r=await fetch(url,{
+      method:opts.method||'GET',
+      headers:{...apiHeaders(!!body),...(opts.headers||{})},
+      body,
+      mode:'cors',
+      credentials:'omit',
+      cache:'no-store'
+    });
+  }catch(e){
+    const x=new Error(explainNetworkError(e));
+    x.code='NETWORK';
+    x.cause=e;
+    throw x;
+  }
+  const text=await r.text();
+  let data=[];
+  try{data=text?JSON.parse(text):[];}catch{data=text;}
+  if(!r.ok){
+    // Access tokens expire. Refresh once and retry the original request.
+    if(r.status===401 && retry && D.settings.refresh_token){
+      const ok=await refresh();
+      if(ok) return rawFetch(path,opts,false);
+    }
+    let detail='';
+    if(data && typeof data==='object'){
+      detail=data.message||data.error_description||data.error||data.msg||JSON.stringify(data);
+    }else detail=String(data||'');
+    const err=new Error(`Supabase respondió HTTP ${r.status}${detail?': '+detail:''}`);
+    err.status=r.status;
+    err.data=data;
+    throw err;
+  }
+  return data;
+}
+async function api(path,opts={}){return rawFetch(path,opts)}
+
+async function login(email,password){
+  if(!cfg()) throw new Error('Primero ingresá Project URL y Publishable key.');
+  if(!email||!password) throw new Error('Ingresá correo y contraseña de Supabase.');
+  let r;
+  try{
+    r=await fetch(supabaseBase()+'/auth/v1/token?grant_type=password',{
+      method:'POST',
+      headers:{
+        'apikey':String(D.settings.key||'').trim(),
+        'Content-Type':'application/json',
+        'Accept':'application/json'
+      },
+      body:JSON.stringify({email,password}),
+      mode:'cors',
+      credentials:'omit',
+      cache:'no-store'
+    });
+  }catch(e){
+    const x=new Error(explainNetworkError(e)); x.code='NETWORK'; throw x;
+  }
+  const text=await r.text();
+  let x={};
+  try{x=text?JSON.parse(text):{};}catch{}
+  if(!r.ok){
+    const msg=x.error_description||x.msg||x.message||x.error||`HTTP ${r.status}`;
+    const err=new Error(`Supabase Auth HTTP ${r.status}: ${msg}`);
+    err.status=r.status; throw err;
+  }
+  if(!x.access_token) throw new Error('Supabase no devolvió un access token. Verificá el usuario y la contraseña.');
+  D.settings.access_token=x.access_token;
+  D.settings.refresh_token=x.refresh_token||'';
+  D.settings.email=email;
+  save();
+  return x;
+}
+
+async function refresh(){
+  if(!cfg()||!D.settings.refresh_token)return false;
+  try{
+    const r=await fetch(supabaseBase()+'/auth/v1/token?grant_type=refresh_token',{
+      method:'POST',
+      headers:{
+        'apikey':String(D.settings.key||'').trim(),
+        'Content-Type':'application/json',
+        'Accept':'application/json'
+      },
+      body:JSON.stringify({refresh_token:D.settings.refresh_token}),
+      mode:'cors',
+      credentials:'omit',
+      cache:'no-store'
+    });
+    if(!r.ok)return false;
+    const x=await r.json();
+    if(!x.access_token)return false;
+    D.settings.access_token=x.access_token;
+    D.settings.refresh_token=x.refresh_token||D.settings.refresh_token;
+    save();
+    return true;
+  }catch{return false}
+}
+
+async function testConnection(silent=false){
+  try{
+    await api('/rest/v1/clientes?select=id&limit=1');
+    if(!silent) alert('✅ Supabase responde correctamente y la tabla "clientes" es accesible con este usuario.');
+    return {ok:true,message:'Supabase y clientes OK'};
+  }catch(e){
+    if(!silent) alert('❌ '+(e.status?`HTTP ${e.status}: `:'')+e.message);
+    return {ok:false,error:e};
+  }
+}
+
+async function diagnose(){
+  if(!cfg()) return alert('❌ Primero ingresá Project URL y Publishable key.');
+  const out=[];
+  out.push('URL: '+supabaseBase());
+  out.push('Clave: '+(String(D.settings.key||'').startsWith('sb_publishable_')?'Publishable key detectada':'Revisar: no parece una sb_publishable_...'));
+  try{
+    const r=await fetch(supabaseBase()+'/auth/v1/settings',{
+      headers:{'apikey':String(D.settings.key||'').trim(),'Accept':'application/json'},
+      mode:'cors',credentials:'omit',cache:'no-store'
+    });
+    out.push(`Auth API: HTTP ${r.status}`);
+    if(!r.ok){
+      const t=await r.text();
+      out.push(t.slice(0,300));
+    }
+  }catch(e){out.push('Auth API: ERROR DE RED — '+explainNetworkError(e));}
+
+  for(const table of ['clientes','vehiculos','servicios','productos']){
+    try{
+      const data=await api('/rest/v1/'+table+'?select=*&limit=1');
+      out.push(`Tabla ${table}: ✅ accesible (${Array.isArray(data)?data.length:1} registro de prueba)`);
+    }catch(e){
+      out.push(`Tabla ${table}: ❌ ${e.status?'HTTP '+e.status+': ':''}${e.message}`);
+    }
+  }
+  alert("🔎 DIAGNÓSTICO BECO'S\n\n"+out.join("\n"));
+}
+
+function naturalKey(table,x){
+  if(table==='clientes'){
+    const doc=String(x.doc||'').trim().toLowerCase();
+    const tel=String(x.telefono||'').replace(/\D/g,'');
+    const nom=String(x.nombre||'').trim().toLowerCase();
+    return doc?`doc:${doc}`:(tel?`tel:${tel}`:`nom:${nom}`);
+  }
+  if(table==='vehiculos') return `pat:${String(x.patente||'').trim().toUpperCase()}`;
+  if(table==='productos') return `prod:${String(x.nombre||'').trim().toLowerCase()}`;
+  if(table==='servicios'){
+    return `svc:${String(x.fecha||'')}|${String(x.patente||'').trim().toUpperCase()}|${Number(x.km)||0}|${String(x.trabajo||'').trim().toLowerCase()}|${Number(x.importe)||0}`;
+  }
+  return String(x.id||'');
+}
+
+function localToRow(table,x){
+  if(table==='clientes') return {nombre:x.nombre||'',telefono:x.telefono||'',doc:x.doc||'',direccion:x.direccion||''};
+  if(table==='vehiculos') return {cliente_id:x.cliente||null,patente:x.patente||'',marca:x.marca||'',modelo:x.modelo||'',anio:Number(x.anio)||null,km_actuales:Number(x.km)||0,proximo_service_km:Number(x.next)||null,combustible:x.combustible||'Nafta',observaciones:x.observaciones||null};
+  if(table==='servicios') return {vehiculo_id:x.vehiculo_id||null,fecha:x.fecha||'',km_entrada:Number(x.km)||0,patente:x.patente||'',aceite:x.aceite||null,filtros_repuestos:x.partes||null,trabajos_realizados:x.trabajo||null,proximo_service_km:Number(x.next)||null,importe:Number(x.importe)||0};
+  if(table==='productos') return {nombre:x.nombre||'',categoria:x.categoria||'',stock:Number(x.stock)||0,precio_venta:Number(x.precio)||0};
+}
+
+function rowToLocal(table,x){
+  if(table==='clientes') return {id:x.id,nombre:x.nombre||'',telefono:x.telefono||'',doc:x.doc||x.dni||x.cuit||'',direccion:x.direccion||''};
+  if(table==='vehiculos') return {id:x.id,cliente:x.cliente_id||x.cliente||'',patente:x.patente||'',marca:x.marca||'',modelo:x.modelo||'',anio:x.anio||x.año||'',km:+(x.km_actuales||x.km||0),next:+(x.proximo_service_km||x.next||0),combustible:x.combustible||'Nafta',observaciones:x.observaciones||''};
+  if(table==='servicios') return {id:x.id,vehiculo_id:x.vehiculo_id||'',fecha:x.fecha||'',patente:x.patente||'',km:+(x.km_entrada||x.km||0),aceite:x.aceite||'',partes:x.filtros_repuestos||x.partes||'',trabajo:x.trabajos_realizados||x.trabajo||'',next:+(x.proximo_service_km||x.next||0),importe:+(x.importe||0)};
+  if(table==='productos') return {id:x.id,nombre:x.nombre||'',categoria:x.categoria||'',stock:+(x.stock??0),precio:+(x.precio_venta??x.precio??0)};
+}
+
+async function backupLocal(reason='manual'){
+  const payload={version:'BECO-S-BACKUP-1',createdAt:new Date().toISOString(),reason,data:{
+    clientes:D.clientes,vehiculos:D.vehiculos,servicios:D.servicios,productos:D.productos
+  }};
+  localStorage.setItem(K+'_backup',JSON.stringify(payload));
+  D.settings.lastBackup=payload.createdAt;
+  save();
+  return payload;
+}
+
+function downloadBackup(){
+  const payload=JSON.parse(localStorage.getItem(K+'_backup')||'null')||{version:'BECO-S-BACKUP-1',createdAt:new Date().toISOString(),data:{
+    clientes:D.clientes,vehiculos:D.vehiculos,servicios:D.servicios,productos:D.productos
+  }};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='BECO_S_respaldo_'+new Date().toISOString().slice(0,10)+'.json';a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+
+async function fetchRemote(){
+  const [c,v,s,p]=await Promise.all([
+    api('/rest/v1/clientes?select=*'),
+    api('/rest/v1/vehiculos?select=*'),
+    api('/rest/v1/servicios?select=*'),
+    api('/rest/v1/productos?select=*')
+  ]);
+  return {clientes:c.map(x=>rowToLocal('clientes',x)),vehiculos:v.map(x=>rowToLocal('vehiculos',x)),servicios:s.map(x=>rowToLocal('servicios',x)),productos:p.map(x=>rowToLocal('productos',x))};
+}
+
+async function pushLocalTable(table, localArr, remoteArr){
+  const remoteByKey=new Map(remoteArr.map(x=>[naturalKey(table,x),x]));
+  const result=[];
+  for(const item of localArr){
+    const key=naturalKey(table,item);
+    const remote=remoteByKey.get(key);
+    if(remote){
+      item.id=remote.id;
+      try{
+        await api('/rest/v1/'+table+'?id=eq.'+encodeURIComponent(remote.id),{
+          method:'PATCH',body:JSON.stringify(localToRow(table,item))
+        });
+      }catch(e){ console.warn('PATCH '+table,e); }
+      result.push(item);
+    }else{
+      const created=await insert(table,localToRow(table,item));
+      if(created?.id) item.id=created.id;
+      result.push(item);
+    }
+  }
+  return result;
+}
+
+function mergeRemote(localArr,remoteArr,table){
+  const map=new Map(localArr.map(x=>[naturalKey(table,x),x]));
+  for(const r of remoteArr){
+    const key=naturalKey(table,r);
+    if(!map.has(key)) localArr.push(r);
+  }
+  return localArr;
+}
+
+function remapForeignKeys(oldClients,oldVehicles){
+  // After syncing parents, their IDs can change from local temporary IDs to
+  // Supabase IDs. Update every dependent record before sending it remotely.
+  const clientMap=new Map();
+  for(const before of oldClients){
+    const now=D.clientes.find(x=>naturalKey('clientes',x)===naturalKey('clientes',before));
+    if(now) clientMap.set(String(before.id),now.id);
+  }
+  D.vehiculos.forEach(v=>{
+    const mapped=clientMap.get(String(v.cliente));
+    if(mapped!=null) v.cliente=mapped;
+  });
+
+  const vehicleMap=new Map();
+  for(const before of oldVehicles){
+    const now=D.vehiculos.find(x=>naturalKey('vehiculos',x)===naturalKey('vehiculos',before));
+    if(now) vehicleMap.set(String(before.id),now.id);
+  }
+  D.servicios.forEach(s=>{
+    const mapped=vehicleMap.get(String(s.vehiculo_id));
+    if(mapped!=null) s.vehiculo_id=mapped;
+    const v=D.vehiculos.find(x=>String(x.id)===String(s.vehiculo_id));
+    if(v) s.patente=v.patente;
+  });
+}
+
+async function previewSupabase(){
+  if(!cfg())return alert('Primero configurá Supabase.');
+  try{
+    const r=await fetchRemote();
+    const msg=`Supabase tiene:\n\n${r.clientes.length} clientes\n${r.vehiculos.length} vehículos\n${r.servicios.length} servicios\n${r.productos.length} productos\n\nActualmente BECO'S tiene:\n${D.clientes.length} clientes\n${D.vehiculos.length} vehículos\n${D.servicios.length} servicios\n${D.productos.length} productos`;
+    if(!confirm('🔎 PREVISUALIZACIÓN\n\n'+msg+'\n\n¿Querés recuperar estos datos en BECO\'S?\n\nPrimero se crea un respaldo local. Los datos de Supabase se agregan a la aplicación y no se borra nada de Supabase.'))return;
+    await recoverRemoteOnly(r);
+  }catch(e){alert('❌ No se pudo consultar Supabase: '+(e.status?`HTTP ${e.status}: `:'')+e.message)}
+}
+
+async function recoverRemoteOnly(r){
+  syncing=true; updateSyncStatus('Recuperando desde Supabase...', 'busy');
+  try{
+    await backupLocal('antes-de-recuperar-supabase');
+    D.clientes=mergeRemote(D.clientes,r.clientes,'clientes');
+    D.vehiculos=mergeRemote(D.vehiculos,r.vehiculos,'vehiculos');
+    D.servicios=mergeRemote(D.servicios,r.servicios,'servicios');
+    D.productos=mergeRemote(D.productos,r.productos,'productos');
+    save(); updateSyncStatus('Recuperación OK','ok');
+    home();
+    alert(`✅ Recuperación terminada.\n\nClientes: ${D.clientes.length}\nVehículos: ${D.vehiculos.length}\nServicios: ${D.servicios.length}\nProductos: ${D.productos.length}\n\nNo se modificó ni borró ningún dato de Supabase.`);
+  }catch(e){
+    save(); updateSyncStatus('Error de recuperación','err');
+    alert('❌ No se pudo recuperar los datos.\n\n'+(e.status?`HTTP ${e.status}: `:'')+e.message+'\n\nTus datos locales permanecen guardados.');
+  }finally{syncing=false}
+}
+
+async function safeSynchronize(){
+  if(!cfg()) throw new Error('Primero configurá Supabase.');
+  if(syncing)return;
+  syncing=true; updateSyncStatus('Respaldando y sincronizando...', 'busy');
+  try{
+    await backupLocal('antes-de-sincronizar');
+    const remote=await fetchRemote();
+    const beforeClients=D.clientes.map(x=>({...x}));
+    const beforeVehicles=D.vehiculos.map(x=>({...x}));
+
+    // Never delete remote-only records. Merge them into the local copy first.
+    D.clientes=mergeRemote(D.clientes,remote.clientes,'clientes');
+    D.vehiculos=mergeRemote(D.vehiculos,remote.vehiculos,'vehiculos');
+    D.servicios=mergeRemote(D.servicios,remote.servicios,'servicios');
+    D.productos=mergeRemote(D.productos,remote.productos,'productos');
+
+    // Parents first. Client IDs are reconciled before vehicles are sent,
+    // then vehicle IDs are reconciled before services are sent.
+    D.clientes=await pushLocalTable('clientes',D.clientes,remote.clientes);
+    remapForeignKeys(beforeClients,beforeVehicles);
+    D.vehiculos=await pushLocalTable('vehiculos',D.vehiculos,remote.vehiculos);
+    remapForeignKeys(beforeClients,beforeVehicles);
+    D.servicios=await pushLocalTable('servicios',D.servicios,remote.servicios);
+    D.productos=await pushLocalTable('productos',D.productos,remote.productos);
+
+    save(); updateSyncStatus('Sincronización segura OK','ok');
+    home();
+    alert('✅ Sincronización terminada.\n\nSe creó un respaldo antes de sincronizar.\nNo se borraron registros remotos y se corrigieron las relaciones entre clientes, vehículos y servicios.');
+  }catch(e){
+    save(); updateSyncStatus('Error de sincronización','err');
+    alert('❌ No se pudo completar la sincronización.\n\n'+(e.status?`HTTP ${e.status}: `:'')+e.message+'\n\nTus datos locales permanecen guardados y el último respaldo está disponible.');
+  }finally{syncing=false}
+}
+
+function updateSyncStatus(text,state='busy'){
+  const el=document.getElementById('syncStatus');
+  if(el) el.innerHTML=`<span class="dot ${state==='ok'?'ok':state==='err'?'err':''}"></span><span>${E(text)}</span>`;
+}
+
+async function pull(){
+  // Compatibility wrapper: NEVER replace local data. Use safe merge instead.
+  return safeSynchronize();
+}
+
+async function insert(table,row){let x=await api('/rest/v1/'+table,{method:'POST',body:JSON.stringify(row)});return Array.isArray(x)?x[0]:x}
+async function syncClient(c){let x=await insert('clientes',{nombre:c.nombre,telefono:c.telefono,doc:c.doc,direccion:c.direccion});return x}
+async function syncVehicle(v){let row={cliente_id:v.cliente||null,patente:v.patente,marca:v.marca,modelo:v.modelo,anio:Number(v.anio)||null,km_actuales:v.km,proximo_service_km:v.next||null,combustible:v.combustible||'Nafta',observaciones:v.observaciones||null};return await insert('vehiculos',row)}
+async function syncService(s){let row={vehiculo_id:s.vehiculo_id||null,fecha:s.fecha,km_entrada:s.km,patente:s.patente,aceite:s.aceite,filtros_repuestos:s.partes,trabajos_realizados:s.trabajo,proximo_service_km:s.next||null,importe:s.importe};return await insert('servicios',row)}
+async function syncProduct(p){return await insert('productos',{nombre:p.nombre,categoria:p.categoria,stock:p.stock,precio_venta:p.precio})}
+function setActive(page){document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===page));}
+function findOlderCopies(){
+  const candidates=[];
+  const keys=['becos_v3','becos_v4','becos_v5','becos_v6','becos_v7'];
+  for(const key of keys){
+    try{
+      const raw=localStorage.getItem(key);
+      if(!raw)continue;
+      const x=JSON.parse(raw);
+      const data={
+        clientes:Array.isArray(x.clientes)?x.clientes:[],
+        vehiculos:Array.isArray(x.vehiculos)?x.vehiculos:[],
+        servicios:Array.isArray(x.servicios)?x.servicios:[],
+        productos:Array.isArray(x.productos)?x.productos:[]
+      };
+      const total=data.clientes.length+data.vehiculos.length+data.servicios.length+data.productos.length;
+      if(total) candidates.push({key,data,total});
+    }catch{}
+  }
+  return candidates;
+}
+function showRecovery(){
+  const found=findOlderCopies();
+  if(!found.length){
+    return alert('No se encontró una copia anterior completa en este navegador.\\n\\nNo se modificó ningún dato.');
+  }
+  const txt=found.map(x=>`${x.key}: ${x.data.clientes.length} clientes · ${x.data.vehiculos.length} vehículos · ${x.data.servicios.length} servicios · ${x.data.productos.length} productos`).join('\\n');
+  alert('🔎 Copias locales encontradas:\\n\\n'+txt+'\\n\\nLa recuperación todavía no modifica nada. Si alguna contiene tus datos anteriores, podemos restaurarla con confirmación.');
+}
+async function restoreOldCopy(key){
+  const raw=localStorage.getItem(key);
+  if(!raw)return alert('No se encontró esa copia.');
+  try{
+    const x=JSON.parse(raw);
+    const data={
+      clientes:Array.isArray(x.clientes)?x.clientes:[],
+      vehiculos:Array.isArray(x.vehiculos)?x.vehiculos:[],
+      servicios:Array.isArray(x.servicios)?x.servicios:[],
+      productos:Array.isArray(x.productos)?x.productos:[]
+    };
+    if(!confirm(`Recuperar ${data.clientes.length} clientes, ${data.vehiculos.length} vehículos, ${data.servicios.length} servicios y ${data.productos.length} productos desde ${key}?\\n\\nSe hará un respaldo de V8 antes de restaurar.`))return;
+    await backupLocal('antes-de-restaurar-'+key);
+    D.clientes=data.clientes;D.vehiculos=data.vehiculos;D.servicios=data.servicios;D.productos=data.productos;
+    save();close();home();
+    alert('✅ Datos recuperados desde '+key+'.');
+  }catch(e){alert('❌ No se pudo recuperar: '+e.message)}
+}
+
+function home(){setActive('home');
+  let a=D.vehiculos.filter(v=>v.next&&v.km>=v.next-1000);
+  mainEl.innerHTML=`
+  <div class="syncbar"><span id="syncStatus"><span class="dot ${cfg()&&D.settings.access_token?'ok':''}"></span><span>${cfg()?(D.settings.access_token?'Conectado a Supabase':'Supabase configurado · clave pública'):'Modo local · datos protegidos'}</span></span></div>
+  <div class="notice"><b>🛡️ Tus datos locales están protegidos</b><br><span class="muted small">La sincronización es manual y segura. Primero se crea un respaldo y nunca se reemplazan tus datos locales automáticamente.</span></div>
+  <div class="grid">
+    <div class="stat">Clientes<b>${D.clientes.length}</b><span>Locales</span></div>
+    <div class="stat">Vehículos<b>${D.vehiculos.length}</b><span>Locales</span></div>
+    <div class="stat">Servicios<b>${D.servicios.length}</b><span>Locales</span></div>
+    <div class="stat">Alertas<b>${a.length}</b><span>Próximos services</span></div>
+  </div>
+  ${a.length?`<div class="card"><h3>🔔 Services próximos</h3>${a.map(v=>`<p><b>${E(v.patente)}</b> · faltan ${Math.max(0,v.next-v.km)} km</p>`).join('')}</div>`:''}
+  <div class="card">
+    <div class="row"><h3>☁️ Sincronización</h3><span class="muted small">${D.settings.lastBackup?'Último respaldo: '+new Date(D.settings.lastBackup).toLocaleString('es-AR'):''}</span></div>
+    <p class="muted">La aplicación trabaja localmente y vos decidís cuándo combinar los datos con Supabase.</p>
+    <div class="actions">
+      <button onclick="settings()">⚙️ Cambiar / configurar Supabase</button>${cfg()?'<button class="success" onclick="previewSupabase()">🛡️ Ver y recuperar datos de Supabase</button>':''}${cfg()?'<button class="blue" onclick="safeSynchronize()">☁️ Sincronizar ahora</button>':''}
+      <button class="blue" onclick="backupLocal();alert('✅ Respaldo local creado.')">💾 Crear respaldo</button>
+      <button class="secondary" onclick="downloadBackup()">⬇️ Exportar respaldo</button>
+      <button class="secondary" onclick="showRecovery()">🛟 Buscar datos anteriores</button>
+    </div>
+  </div>
+  <div class="card"><h3>⚡ Carga rápida</h3><div class="actions"><button onclick="newClient()">+ Cliente</button><button onclick="newVehicle()">+ Vehículo</button><button onclick="newService()">+ Service</button><button onclick="newProduct()">+ Producto</button></div></div>
+  <div class="card"><h3>Últimos servicios</h3>${D.servicios.slice(-8).reverse().map(s=>`<p><b>${E(s.patente)}</b> · ${E(s.fecha)} · ${s.km} km<br><span class="muted">${E(s.trabajo)}</span></p>`).join('')||'<div class="empty">No hay servicios todavía.</div>'}</div>`;
+}
+
+function clients(){setActive('clients');
+  mainEl.innerHTML=`<div class="card row"><div><h3>Clientes</h3><div class="muted small">Tus datos locales. No se reemplazan automáticamente.</div></div><button onclick="newClient()">+ Nuevo</button></div>
+  <div class="card"><table><tr><th>Nombre</th><th>Teléfono</th><th>DNI/CUIT</th><th>Dirección</th><th>Acciones</th></tr>
+  ${D.clientes.map(c=>`<tr><td><b>${E(c.nombre)}</b></td><td>${E(c.telefono)}</td><td>${E(c.doc)}</td><td>${E(c.direccion)}</td><td><div class="actions"><button onclick="editClient(${JSON.stringify(c.id)})">🖊️</button><button class="danger" onclick="deleteClient(${JSON.stringify(c.id)})">🗑️</button></div></td></tr>`).join('')||'<tr><td colspan="5" class="empty">No hay clientes.</td></tr>'}</table></div>`;
+}
+function editClient(id){
+ const c=D.clientes.find(x=>String(x.id)===String(id)); if(!c)return;
+ open(`<h3>🖊️ Editar cliente</h3>
+ <div class="field">Nombre<input id="a" value="${E(c.nombre)}"></div>
+ <div class="field">Teléfono<input id="b" value="${E(c.telefono)}"></div>
+ <div class="field">DNI/CUIT<input id="c" value="${E(c.doc)}"></div>
+ <div class="field">Dirección<input id="d" value="${E(c.direccion)}"></div>
+ <div class="actions"><button onclick="updateClient(${JSON.stringify(c.id)})">💾 Guardar cambios</button><button class="secondary" onclick="close()">Cancelar</button></div>`);
+}
+function updateClient(id){
+ const c=D.clientes.find(x=>String(x.id)===String(id)); if(!c)return;
+ c.nombre=a.value.trim();c.telefono=b.value.trim();c.doc=document.getElementById('c').value.trim();c.direccion=d.value.trim();
+ save();close();clients();
+}
+async function deleteClient(id){
+ const c=D.clientes.find(x=>String(x.id)===String(id));if(!c)return;
+ if(D.vehiculos.some(v=>String(v.cliente)===String(id)))return alert('⚠️ No se puede eliminar este cliente porque tiene vehículos asociados.');
+ if(!confirm('¿Eliminar a '+(c.nombre||'este cliente')+'?'))return;
+ try{
+   if(cfg()&&D.settings.access_token) await api('/rest/v1/clientes?id=eq.'+encodeURIComponent(id),{method:'DELETE'});
+ }catch(e){return alert('❌ No se pudo eliminar en Supabase: '+e.message)}
+ D.clientes=D.clientes.filter(x=>String(x.id)!==String(id));save();clients();
+}
+
+function vehicles(){setActive('vehicles');
+mainEl.innerHTML=`<div class="card row"><div><h3>Vehículos</h3><div class="muted">Tocá "Ver" para consultar todo el historial del vehículo.</div></div><button onclick="newVehicle()">+ Nuevo</button></div>
+<div class="card"><table><tr><th>Patente</th><th>Vehículo</th><th>Km</th><th>Próximo</th><th>Historial</th></tr>
+${D.vehiculos.map(v=>`<tr>
+<td><b>${E(v.patente)}</b></td>
+<td>${E(v.marca)} ${E(v.modelo)}<br><span class="muted">${E(v.anio||'')}</span></td>
+<td>${v.km||0}</td>
+<td>${v.next||'-'} ${v.next&&v.km>=v.next-1000?'<span class="badge">SERVICE</span>':''}</td>
+<td><button onclick="vehicleHistory(${JSON.stringify(v.id)})">Ver</button></td>
+</tr>`).join('')}</table></div>`}
+function services(){setActive('services');
+mainEl.innerHTML=`<div class="card row"><h3>Historial de servicios</h3><button onclick="newService()">+ Service</button></div>
+<div class="card"><table><tr><th>Fecha</th><th>Patente</th><th>Km</th><th>Trabajo</th><th>Importe</th><th>Acciones</th></tr>
+${D.servicios.slice().reverse().map(s=>`<tr>
+<td>${E(s.fecha)}</td>
+<td><b>${E(s.patente)}</b></td>
+<td>${s.km||0}</td>
+<td>${E(s.trabajo)}</td>
+<td>$ ${s.importe||0}</td>
+<td><div class="actions">
+<button onclick="editService(${JSON.stringify(s.id)})">🖊️</button>
+<button onclick="deleteService(${JSON.stringify(s.id)})">🗑️</button>
+</div></td>
+</tr>`).join('')}</table></div>`}
+function editService(id){
+const s=D.servicios.find(x=>String(x.id)===String(id));
+if(!s)return alert('No se encontró el servicio.');
+open(`<h3>🖊️ Editar service</h3>
+<div class="field">Vehículo<select id="a">${D.vehiculos.map(v=>`<option value="${v.id}" ${String(v.id)===String(s.vehiculo_id)?'selected':''}>${E(v.patente)} · ${E(v.marca)} ${E(v.modelo)}</option>`).join('')}</select></div>
+<div class="field">Fecha<input id="b" type="date" value="${E(s.fecha)}"></div>
+<div class="field">Km de entrada<input id="c" type="number" value="${s.km||0}"></div>
+<div class="field">Aceite / lubricante<input id="d" value="${E(s.aceite||'')}"></div>
+<div class="field">Filtros / repuestos<input id="e" value="${E(s.partes||'')}"></div>
+<div class="field">Trabajos realizados<textarea id="f">${E(s.trabajo||'')}</textarea></div>
+<div class="field">Próximo service (km)<input id="g" type="number" value="${s.next||0}"></div>
+<div class="field">Importe<input id="h" type="number" value="${s.importe||0}"></div>
+<div class="actions"><button onclick="updateService(${JSON.stringify(s.id)})">💾 Guardar cambios</button><button onclick="close()">Cancelar</button></div>`)
+}
+async function updateService(id){
+const s=D.servicios.find(x=>String(x.id)===String(id));
+if(!s)return;
+const v=D.vehiculos.find(x=>String(x.id)===String(a.value));
+if(!v)return alert('Seleccioná un vehículo.');
+const updated={
+...s,
+vehiculo_id:v.id,
+fecha:b.value,
+patente:v.patente,
+km:+c.value||0,
+aceite:d.value,
+partes:e.value,
+trabajo:f.value,
+next:+g.value||0,
+importe:+h.value||0
+};
+try{
+if(cfg()&&D.settings.access_token){
+const row={
+vehiculo_id:updated.vehiculo_id||null,
+fecha:updated.fecha,
+km_entrada:updated.km,
+patente:updated.patente,
+aceite:updated.aceite||null,
+filtros_repuestos:updated.partes||null,
+trabajos_realizados:updated.trabajo||null,
+proximo_service_km:updated.next||null,
+importe:updated.importe
+};
+await api('/rest/v1/servicios?id=eq.'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify(row)});
+}
+Object.assign(s,updated);
+save();
+close();
+services();
+}catch(e){
+alert('❌ No se pudo editar el servicio en Supabase: '+e.message);
+}
+}
+async function deleteService(id){
+const s=D.servicios.find(x=>String(x.id)===String(id));
+if(!s)return;
+if(!confirm('¿Seguro que querés eliminar este servicio de '+(s.patente||'este vehículo')+'?\\n\\nEsta acción no elimina el cliente ni el vehículo.'))return;
+try{
+/* Deletion is local-first. Supabase deletion is handled by an explicit future sync policy. */
+D.servicios=D.servicios.filter(x=>String(x.id)!==String(id));
+save();
+services();
+}catch(e){
+alert('❌ No se pudo eliminar el servicio en Supabase: '+e.message);
+}
+}
+
+function vehicleHistory(id){
+const v=D.vehiculos.find(x=>String(x.id)===String(id));
+if(!v)return;
+const c=D.clientes.find(x=>String(x.id)===String(v.cliente));
+const hs=D.servicios.filter(s=>String(s.vehiculo_id)===String(v.id)||String(s.patente).toUpperCase()===String(v.patente).toUpperCase()).sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha)));
+open(`<h3>🚗 Historial del vehículo</h3>
+<div class="card">
+<p><b>Patente:</b> ${E(v.patente)}</p>
+<p><b>Vehículo:</b> ${E(v.marca)} ${E(v.modelo)} · ${E(v.anio||'-')}</p>
+<p><b>Cliente:</b> ${E(c?.nombre||'Sin cliente')}</p>
+<p><b>Teléfono:</b> ${E(c?.telefono||'-')}</p>
+<p><b>Kilómetros actuales:</b> ${v.km||0}</p>
+<p><b>Próximo service:</b> ${v.next||'-'}</p>
+</div>
+<h4>Historial de services (${hs.length})</h4>
+${hs.length?hs.map(s=>`<div class="card">
+<div class="row"><b>${E(s.fecha)}</b><span>${s.km||0} km</span></div>
+${s.aceite?`<p><b>Aceite/lubricante:</b> ${E(s.aceite)}</p>`:''}
+${s.partes?`<p><b>Filtros/repuestos:</b> ${E(s.partes)}</p>`:''}
+${s.trabajo?`<p><b>Trabajos:</b> ${E(s.trabajo)}</p>`:''}
+${s.next?`<p><b>Próximo service:</b> ${s.next} km</p>`:''}
+${s.importe?`<p><b>Importe:</b> $ ${s.importe}</p>`:''}
+</div>`).join(''):'<div class="empty">Este vehículo todavía no tiene servicios registrados.</div>'}
+<div class="actions"><button onclick="newServiceFor(${JSON.stringify(v.id)})">+ Registrar service</button><button onclick="close()">Cerrar</button></div>`)
+}
+function newServiceFor(id){
+close();
+setTimeout(()=>{
+if(!D.vehiculos.some(v=>String(v.id)===String(id)))return;
+newService(id);
+},50);
+}
+function products(){setActive('products');mainEl.innerHTML=`<div class="card row"><h3>Productos y stock</h3><button onclick="newProduct()">+ Producto</button></div><div class="card"><table><tr><th>Producto</th><th>Categoría</th><th>Stock</th><th>Precio</th></tr>${D.productos.map(p=>`<tr><td>${E(p.nombre)}</td><td>${E(p.categoria)}</td><td>${p.stock}</td><td>$ ${p.precio}</td></tr>`).join('')}</table></div>`}
+function alerts(){setActive('alerts');let a=D.vehiculos.filter(v=>v.next&&v.km>=v.next-1000);mainEl.innerHTML=`<div class="card"><h3>🔔 Alertas de SERVICE</h3><p class="muted">Se activa cuando faltan 1.000 km o menos.</p></div><div class="card">${a.map(v=>`<p><b>${E(v.patente)}</b> · ${E(v.marca)} ${E(v.modelo)} · faltan ${Math.max(0,v.next-v.km)} km</p>`).join('')||'<div class="empty">No hay alertas.</div>'}</div>`}
+function open(x){sheetEl.innerHTML=x;modalEl.className='modal on'}function close(){modalEl.className='modal'}
+function newClient(){open(`<h3>Nuevo cliente</h3><div class="field">Nombre<input id="a"></div><div class="field">Teléfono<input id="b"></div><div class="field">DNI/CUIT<input id="c"></div><div class="field">Dirección<input id="d"></div><div class="actions"><button onclick="saveClient()">Guardar</button><button onclick="close()">Cancelar</button></div>`)}
+async function saveClient(){
+  let c1={id:newid(),nombre:a.value.trim(),telefono:b.value.trim(),doc:document.getElementById('c').value.trim(),direccion:d.value.trim()};
+  try{
+    /* local-first: Supabase is updated only by explicit safe synchronization */;
+  }catch(e){
+    alert('❌ No se pudo guardar en Supabase.\\n\\n'+(e.status?`HTTP ${e.status}: `:'')+e.message+'\\n\\nSi aparece "Failed to fetch", abrí ⚙️ Configurar → 🧪 Diagnóstico.');
+    return;
+  }
+  D.clientes.push(c1);save();close();clients();
+}
+function newVehicle(){if(!D.clientes.length)return alert('Primero cargá un cliente.');open(`<h3>Nuevo vehículo</h3><div class="field">Cliente<select id="a">${D.clientes.map(c=>`<option value="${c.id}">${E(c.nombre)}</option>`)}</select></div><div class="field">Patente<input id="b"></div><div class="field">Marca<input id="c"></div><div class="field">Modelo<input id="d"></div><div class="field">Año<input id="e" type="number"></div><div class="field">Kilómetros actuales<input id="f" type="number"></div><div class="field">Próximo service (km)<input id="g" type="number" placeholder="Ej. 125000"></div><div class="actions"><button onclick="saveVehicle()">Guardar</button><button onclick="close()">Cancelar</button></div>`)}
+async function saveVehicle(){
+  let v={id:newid(),cliente:a.value,patente:b.value.toUpperCase().trim(),marca:c.value.trim(),modelo:d.value.trim(),anio:e.value,km:+f.value||0,next:+g.value||0};
+  try{
+    /* local-first: Supabase is updated only by explicit safe synchronization */;
+  }catch(e){
+    alert('❌ No se pudo guardar el vehículo en Supabase.\\n\\n'+(e.status?`HTTP ${e.status}: `:'')+e.message+'\\n\\nUsá ⚙️ Configurar → 🧪 Diagnóstico.');
+    return;
+  }
+  D.vehiculos.push(v);save();close();vehicles();
+}
+function newService(preselectedId){if(!D.vehiculos.length)return alert('Primero cargá un vehículo.');open(`<h3>Registrar service</h3><div class="field">Vehículo<select id="a">${D.vehiculos.map(v=>`<option value="${v.id}" ${preselectedId!=null&&String(v.id)===String(preselectedId)?'selected':''}>${E(v.patente)} · ${E(v.marca)} ${E(v.modelo)}</option>`)}</select></div><div class="field">Fecha<input id="b" type="date" value="${new Date().toISOString().slice(0,10)}"></div><div class="field">Km de entrada<input id="c" type="number"></div><div class="field">Aceite / lubricante<input id="d"></div><div class="field">Filtros / repuestos<input id="e"></div><div class="field">Trabajos realizados<textarea id="f"></textarea></div><div class="field">Próximo service (km)<input id="g" type="number"></div><div class="field">Importe<input id="h" type="number"></div><div class="actions"><button onclick="saveService()">Guardar</button><button onclick="close()">Cancelar</button></div>`)}
+async function saveService(){
+let v=D.vehiculos.find(x=>x.id==a.value);
+if(!v)return alert('Seleccioná un vehículo.');
+let s={id:newid(),vehiculo_id:v.id,fecha:b.value,patente:v.patente,km:+c.value||0,aceite:d.value,partes:e.value,trabajo:f.value,next:+g.value||0,importe:+h.value||0};
+try{
+/* local-first: Supabase is updated only by explicit safe synchronization */
+}catch(e){alert('No se pudo guardar en Supabase: '+e.message);return}
+D.servicios.push(s);
+v.km=s.km;
+if(s.next)v.next=s.next;
+save();close();services();
+}
+async function updateVehicleInSupabase(v,s){
+const row={km_actuales:s.km};
+if(s.next)row.proximo_service_km=s.next;
+await api('/rest/v1/vehiculos?id=eq.'+encodeURIComponent(v.id),{method:'PATCH',body:JSON.stringify(row)});
+}
+
+function newProduct(){open(`<h3>Nuevo producto</h3><div class="field">Nombre<input id="a"></div><div class="field">Categoría<input id="b"></div><div class="field">Stock<input id="c" type="number"></div><div class="field">Precio de venta<input id="d" type="number"></div><button onclick="saveProduct()">Guardar</button>`)}
+async function saveProduct(){
+  let p={id:newid(),nombre:a.value.trim(),categoria:b.value.trim(),stock:+c.value||0,precio:+d.value||0};
+  try{
+    /* local-first: Supabase is updated only by explicit safe synchronization */;
+  }catch(e){
+    alert('❌ No se pudo guardar el producto en Supabase.\\n\\n'+(e.status?`HTTP ${e.status}: `:'')+e.message+'\\n\\nUsá ⚙️ Configurar → 🧪 Diagnóstico.');
+    return;
+  }
+  D.productos.push(p);save();close();products();
+}
+function settings(){
+  const backup=localStorage.getItem(K+'_backup');
+  let info='No hay respaldo local disponible.';
+  if(backup){
+    try{
+      const b=JSON.parse(backup);
+      const d=b.data||{};
+      info=`Último respaldo: ${b.createdAt?new Date(b.createdAt).toLocaleString('es-AR'):'desconocido'} · Clientes ${d.clientes?.length||0} · Vehículos ${d.vehiculos?.length||0} · Servicios ${d.servicios?.length||0} · Productos ${d.productos?.length||0}`;
+    }catch{}
+  }
+  open(`<h3>⚙️ Configuración, recuperación y sincronización</h3>
+  <div class="notice"><b>🛡️ Datos protegidos</b><br><span class="muted small">La aplicación es local-first. Conectar Supabase NO reemplaza tus datos. Cada sincronización crea un respaldo y nunca borra datos remotos automáticamente.</span></div>
+  <h4>☁️ Conexión Supabase</h4>
+  <div class="field">Project URL<input id="a" value="${E(D.settings.url||'https://evrwqprgndkpsqznyuph.supabase.co')}"></div>
+  <div class="field">Publishable key<input id="b" value="${E(D.settings.key||'')}" placeholder="sb_publishable_..."></div>
+  <div class="field">Correo del usuario Supabase<input id="c" value="${E(D.settings.email||'')}" type="email"></div>
+  <div class="field">Contraseña<input id="d" type="password" placeholder="Contraseña de tu usuario Supabase"></div>
+  <div class="actions"><button onclick="connect()">🔐 Conectar</button><button onclick="testConnection()">🔎 Probar</button><button onclick="diagnose()">🧪 Diagnóstico</button></div>
+  <hr style="border:0;border-top:1px solid #263247;margin:18px 0">
+  <h4>💾 Respaldo y recuperación</h4>
+  <p class="muted small">${E(info)}</p>
+  <div class="actions">
+    <button class="blue" onclick="backupLocal();alert('✅ Respaldo creado con los datos actuales.')">💾 Crear respaldo</button>
+    <button class="secondary" onclick="downloadBackup()">⬇️ Exportar respaldo</button>
+    <button class="secondary" onclick="document.getElementById('restoreFile').click()">📥 Recuperar respaldo</button>
+    <input id="restoreFile" type="file" accept=".json,application/json" style="display:none" onchange="restoreBackup(this.files[0])">
+  </div>
+  <hr style="border:0;border-top:1px solid #263247;margin:18px 0">
+  <h4>☁️ Sincronización</h4>
+  <p class="muted small">Primero hace una copia de seguridad. Después consulta Supabase y recupera los registros sin borrar nada del proyecto remoto.</p>
+  <div class="actions">
+    <button onclick="settings()">⚙️ Cambiar / configurar Supabase</button>${cfg()?'<button class="success" onclick="previewSupabase()">🛡️ Ver y recuperar datos de Supabase</button>':'<span class="muted small">Después de guardar una clave válida aparecerá la recuperación.</span>'}${cfg()?'<button class="blue" onclick="safeSynchronize()">☁️ Sincronizar ahora</button>':''}
+  </div>
+  <div class="actions" style="margin-top:16px"><button class="secondary" onclick="close()">Cerrar</button></div>`);
+}
+
+async function restoreBackup(file){
+  if(!file)return;
+  try{
+    const text=await file.text();
+    const b=JSON.parse(text);
+    const d=b.data||b;
+    if(!Array.isArray(d.clientes)||!Array.isArray(d.vehiculos)||!Array.isArray(d.servicios)||!Array.isArray(d.productos)){
+      throw new Error("El archivo no tiene un respaldo BECO'S válido.");
+    }
+    if(!confirm(`Se encontraron ${d.clientes.length} clientes, ${d.vehiculos.length} vehículos, ${d.servicios.length} servicios y ${d.productos.length} productos.\\n\\nEsto reemplazará SOLO los datos locales actuales. ¿Continuar?`))return;
+    await backupLocal('antes-de-restaurar');
+    D.clientes=d.clientes;D.vehiculos=d.vehiculos;D.servicios=d.servicios;D.productos=d.productos;
+    save();close();home();
+    alert('✅ Respaldo restaurado correctamente.');
+  }catch(e){alert('❌ No se pudo recuperar el respaldo: '+e.message)}
+}
+
+async function connect(){
+  const newUrl=a.value.trim(), newKey=b.value.trim(), email=c.value.trim(), password=d.value;
+  if(!newUrl||!newKey)return alert('❌ Completá Project URL y Publishable key.');
+  D.settings.url=cleanUrl(newUrl);D.settings.key=newKey;D.settings.email=email;
+  D.settings.access_token='';D.settings.refresh_token='';
+  save();
+  try{
+    // First try the publishable key directly. This is the safest path when
+    // the project's RLS policies allow access without a user JWT.
+    await testConnection(true);
+    await backupLocal('después-de-conectar');
+    close();home();
+    alert('✅ Supabase responde correctamente.\n\nLa aplicación quedó conectada con la Publishable key.\nTus datos locales NO fueron reemplazados.\n\nAhora podemos ver y combinar los datos de Supabase de forma segura.');
+    return;
+  }catch(e){
+    // If the project requires an authenticated user, optionally try the
+    // email/password flow only when the user supplied credentials.
+    if(email && password){
+      try{
+        await login(email,password);
+        await testConnection(true);
+        await backupLocal('después-de-conectar');
+        close();home();
+        alert('✅ Supabase conectado con autenticación.\n\nTus datos locales NO fueron reemplazados.\nLa sincronización queda a tu decisión.');
+        return;
+      }catch(authErr){
+        alert('❌ Supabase está activo, pero esta aplicación necesita permisos de acceso a las tablas.\n\nPrueba directa: '+(e.status?`HTTP ${e.status}: `:'')+e.message+'\n\nAutenticación: '+(authErr.status?`HTTP ${authErr.status}: `:'')+authErr.message+'\n\nNo se modificó ningún dato.');
+        return;
+      }
+    }
+    alert('❌ Supabase responde, pero no permite consultar la tabla "clientes" con esta Publishable key.\n\nNo se modificó ningún dato.\n\nSi las tablas tienen RLS, necesitaremos usar el acceso autenticado del proyecto o ajustar las políticas desde Supabase.');
+  }
+}
+
+try{home()}catch(e){console.error(e);mainEl.innerHTML='<div class="card"><h3>⚠️ Error al cargar BECO\'S</h3><p class="muted">La aplicación se abrió, pero hay datos antiguos incompatibles. Tocá Configurar o limpiá los datos del sitio y volvé a abrir.</p><button onclick="settings()">⚙️ Configurar</button></div>'}
+if(!D.settings.lastBackup && !localStorage.getItem(K+'_backup')) backupLocal('primer-inicio');
+</script>
+<script>
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(err => console.warn('SW:', err));
+  });
+}
+</script>
+</body></html>
