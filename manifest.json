@@ -1,26 +1,19 @@
 {
   "name": "BECO'S Lubricentro",
   "short_name": "BECO'S",
-  "description": "Sistema profesional para clientes, vehículos, servicios y productos.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#07101d",
   "theme_color": "#f59e0b",
+  "background_color": "#07101d",
   "lang": "es-AR",
   "icons": [
     {
-      "src": "icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
     }
   ]
 }
